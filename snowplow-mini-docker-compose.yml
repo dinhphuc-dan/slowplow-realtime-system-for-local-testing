@@ -1,0 +1,224 @@
+version: "2"
+
+services:
+  elasticsearch:
+    image: opensearchproject/opensearch:2.4.0
+    container_name: elasticsearch
+    restart: always
+    environment:
+      # Swapping needs to be disabled for performance and node stability
+      - "bootstrap.memory_lock=true"
+      - OPENSEARCH_JAVA_OPTS=-Xms${ELASTICSEARCH_HEAP_SIZE} -Xmx${ELASTICSEARCH_HEAP_SIZE}
+      - "DISABLE_INSTALL_DEMO_CONFIG=true"
+      - "DISABLE_SECURITY_PLUGIN=true"
+    volumes:
+      - /home/ubuntu/snowplow/elasticsearch/data:/usr/share/opensearch/data
+      - /home/ubuntu/snowplow/elasticsearch/config/elasticsearch.yml:/usr/share/opensearch/config/opensearch.yml
+      - /home/ubuntu/snowplow/elasticsearch/config/log4j2.properties:/usr/share/opensearch/config/log4j2.properties
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
+    logging:
+      driver: gcplogs
+    ports:
+      - "9200:9200"
+      - "9300:9300"
+    mem_limit: ${ELASTICSEARCH_MEM_SIZE}
+
+  kibana:
+    image: opensearchproject/opensearch-dashboards:2.4.0
+    container_name: kibana
+    restart: always
+    environment:
+      - "DISABLE_SECURITY_DASHBOARDS_PLUGIN=true"
+    volumes:
+      - /home/ubuntu/snowplow/elasticsearch/config/kibana.yml:/usr/share/opensearch-dashboards/config/opensearch_dashboards.yml
+    ports:
+      - "5601:5601"
+    depends_on:
+      - elasticsearch
+    logging:
+      driver: gcplogs
+    mem_limit: ${KIBANA_MEM_SIZE}
+
+  elasticsearch-loader-good:
+    image: snowplow/elasticsearch-loader:2.1.2-distroless
+    container_name: elasticsearch-loader-good
+    command: [ "--config", "/snowplow/config/snowplow-es-loader-good.hocon" ]
+    restart: always
+    depends_on:
+      - elasticsearch
+    volumes:
+      - /home/ubuntu/snowplow/configs:/snowplow/config
+    logging:
+      driver: gcplogs
+    environment:
+      - "JDK_JAVA_OPTIONS=-XX:MinRAMPercentage=50 -XX:MaxRAMPercentage=75 -Dlog4j2.formatMsgNoLookups=true"
+    env_file: /home/ubuntu/snowplow/envs/es-loader-good.env
+    mem_limit: ${SP_ES_LOADER_MEM_SIZE}
+
+  elasticsearch-loader-bad:
+    image: snowplow/elasticsearch-loader:2.1.2-distroless
+    container_name: elasticsearch-loader-bad
+    command: [ "--config", "/snowplow/config/snowplow-es-loader-bad.hocon" ]
+    restart: always
+    depends_on:
+      - elasticsearch
+    volumes:
+      - /home/ubuntu/snowplow/configs:/snowplow/config
+    logging:
+      driver: gcplogs
+    environment:
+      - "JDK_JAVA_OPTIONS=-XX:MinRAMPercentage=50 -XX:MaxRAMPercentage=75 -Dlog4j2.formatMsgNoLookups=true"
+    env_file: /home/ubuntu/snowplow/envs/es-loader-bad.env
+    mem_limit: ${SP_ES_LOADER_MEM_SIZE}
+
+  nsqlookupd:
+    image: nsqio/nsq:v1.3.0
+    container_name: nsqlookupd
+    command: /nsqlookupd --broadcast-address=nsqlookupd
+    restart: always
+    logging:
+      driver: gcplogs
+    ports:
+      - "4160:4160"
+      - "4161:4161"
+    mem_limit: 64m
+
+  nsqd:
+    image: nsqio/nsq:v1.3.0
+    container_name: nsqd
+    command: /nsqd --broadcast-address=nsqd --lookupd-tcp-address=nsqlookupd:4160 --data-path=/home/ubuntu/snowplow/nsq-data
+    restart: always
+    volumes:
+      - /home/ubuntu/snowplow/nsq-data:/home/ubuntu/snowplow/nsq-data
+    depends_on:
+      - nsqlookupd
+    ports:
+      - "4150:4150"
+      - "4151:4151"
+    logging:
+      driver: gcplogs
+    mem_limit: ${NSQD_MEM_SIZE}
+
+  nsqadmin:
+    image: nsqio/nsq:v1.3.0
+    container_name: nsqadmin
+    command: /nsqadmin --lookupd-http-address=nsqlookupd:4161 --base-path=/nsqadmin
+    restart: always
+    depends_on:
+      - nsqlookupd
+    ports:
+      - "4171:4171"
+    logging:
+      driver: gcplogs
+    mem_limit: 64m
+
+  scala-stream-collector:
+    image: snowplow/scala-stream-collector-nsq:3.2.0-distroless
+    container_name: scala-stream-collector-nsq
+    command: [ "--config", "/snowplow/config/snowplow-stream-collector.hocon" ]
+    restart: always
+    depends_on:
+      - nsqd
+    ports:
+      - "8080:8080"
+    volumes:
+      - /home/ubuntu/snowplow/configs:/snowplow/config
+    logging:
+      driver: gcplogs
+    environment:
+      - "JDK_JAVA_OPTIONS=-XX:MinRAMPercentage=50 -XX:MaxRAMPercentage=75 -Dlog4j2.formatMsgNoLookups=true"
+    env_file: /home/ubuntu/snowplow/envs/collector.env
+    mem_limit: ${SP_COLLECTOR_MEM_SIZE}
+
+  enrich:
+    image: snowplow/snowplow-enrich-nsq:5.1.1-distroless
+    container_name: enrich
+    command: [
+      "--config", "/snowplow/config/snowplow-enrich.hocon",
+      "--iglu-config", "/snowplow/config/iglu-resolver.json",
+      "--enrichments", "/snowplow/config/enrichments"
+    ]
+    restart: always
+    depends_on:
+      - scala-stream-collector
+    volumes:
+      - /home/ubuntu/snowplow/configs:/snowplow/config
+    logging:
+      driver: gcplogs
+    environment:
+      - "JDK_JAVA_OPTIONS=-XX:MinRAMPercentage=50 -XX:MaxRAMPercentage=75 -Dlog4j2.formatMsgNoLookups=true"
+    env_file: /home/ubuntu/snowplow/envs/enrich.env
+    mem_limit: ${SP_ENRICH_MEM_SIZE}
+
+  postgres:
+    image: postgres:15.1-alpine
+    container_name: postgres
+    restart: always
+    volumes:
+      - /home/ubuntu/snowplow/init/iglu-server-init.sql:/docker-entrypoint-initdb.d/init.sql
+      - /home/ubuntu/snowplow/pg-data:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"
+    logging:
+      driver: gcplogs
+    environment:
+      POSTGRES_HOST_AUTH_METHOD: trust
+    mem_limit: 128m
+
+  iglu-server:
+    image: snowplow/iglu-server:0.13.0-distroless
+    container_name: iglu-server
+    command: ["--config", "/snowplow/config/iglu-server.conf"]
+    restart: always
+    depends_on:
+      - postgres
+    ports:
+      - "8081:8081"
+    volumes:
+      - /home/ubuntu/snowplow/configs:/snowplow/config
+    logging:
+      driver: gcplogs
+    environment:
+      - "JAVA_OPTS=-XX:MinRAMPercentage=50 -XX:MaxRAMPercentage=75"
+    mem_limit: ${SP_IGLU_SERVER_MEM_SIZE}
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.49.1
+    container_name: cadvisor
+    restart: always
+    privileged: true
+    entrypoint: ["/usr/bin/cadvisor", "-logtostderr", "-url_base_prefix=/metrics", "--docker_only"]
+    environment:
+      CADVISOR_HEALTHCHECK_URL: http://localhost:8080/metrics/healthz
+    ports:
+      - 8093:8080
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    logging:
+      driver: gcplogs
+    mem_limit: ${CA_ADVISOR_MEM_SIZE}
+
+  swagger:
+    image: swaggerapi/swagger-ui:v5.17.14
+    container_name: swagger-ui
+    restart: always
+    ports:
+      - 8082:8080
+    environment:
+      - SWAGGER_JSON=/snowplow/openapi.yaml
+      - BASE_URL=/swagger
+    volumes:
+      - /home/ubuntu/snowplow/configs/openapi.yaml:/snowplow/openapi.yaml
+    logging:
+      driver: gcplogs
+    mem_limit: 64m

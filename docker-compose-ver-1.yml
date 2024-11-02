@@ -1,0 +1,103 @@
+services:  
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.7.1
+    container_name: zookeeper
+    restart: unless-stopped
+    hostname: zookeeper
+    ports: 
+      - 2181:2181
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+
+  kafka:
+    image: confluentinc/cp-kafka:7.7.1
+    container_name: kafka
+    restart: unless-stopped
+    hostname: kafka
+    depends_on:
+      - zookeeper
+    ports: 
+      - 9092:9092
+    environment:
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_BROKER_ID: 1
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    healthcheck:
+      test: kafka-topics --bootstrap-server broker:9092 --list
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+  
+  snowplow-scala-stream-collector-kafka:
+    image: snowplow/scala-stream-collector-kafka:3.1.0
+    container_name: snowplow-scala-stream-collector-kafka
+    restart: unless-stopped
+    depends_on:
+      - kafka
+    command: [ "--config", "/home/snowplow/snowplow-config/snowplow-stream-collector.hocon" ]
+    ports:
+      - 15100:8080
+    volumes:
+      - snowplow-local-config:/home/snowplow/snowplow-config
+  
+  snowplow-postgres:
+    image: postgres:15 
+    container_name: snowplow-postgres
+    restart: unless-stopped
+    depends_on:
+      - kafka
+    ports:
+      - 15110:5432
+    volumes:
+      - snowplow-postgres-db:/var/lib/postgresql/data
+    environment:
+      POSTGRES_USER: snowplow_user
+      POSTGRES_PASSWORD: snowplow_password
+      POSTGRES_DB: igludb
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U snowplow_user -d igludb"]
+      interval: 5s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+  
+  snowplow-iglu-server:
+    image: snowplow/iglu-server:0.12.0
+    container_name: snowplow-iglu-server
+    restart: unless-stopped
+    depends_on:
+      - snowplow-postgres
+    command: [ "--config", "/home/snowplow/snowplow-config/iglu-server.hocon" ]
+    ports:
+      - 15120:8080
+    volumes:
+      - snowplow-local-config:/home/snowplow/snowplow-config
+  
+  snowplow-enrich:
+    image: snowplow/stream-enrich-kafka:3.8.0
+    container_name: snowplow-enrich
+    restart: unless-stopped
+    depends_on:
+      - snowplow-scala-stream-collector-kafka
+      - snowplow-iglu-server
+    command: [
+      "--config", "/home/snowplow/snowplow-config/snowplow-enrich.hocon",
+      "--resolver", "file:/home/snowplow/snowplow-config/iglu-resolver.json",
+      "--enrichments", "file:/home/snowplow/snowplow-config/enrichments"
+    ]
+    volumes:
+      - snowplow-local-config:/home/snowplow/snowplow-config
+    environment:
+      - GOOGLE_APPLICATION_CREDENTIALS=/home/snowplow/snowplow-config/snowplow-volio-group-ede057cb3572.json
+    
+
+volumes:
+  snowplow-local-config:
+    name: snowplow-local-config
+    external: true
+  snowplow-postgres-db:
+    name: snowplow-postgres-db

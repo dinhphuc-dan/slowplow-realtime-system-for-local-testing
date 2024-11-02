@@ -1,0 +1,20 @@
+{
+    "$schema": "http://iglucentral.com/schemas/com.snowplowanalytics.self-desc/schema/jsonschema/1-0-0#",
+    "description": "Schema for testing custom contexts",
+    "self": {
+        "vendor": "phucdinhtest",
+        "name": "whatthehell",
+        "format": "jsonschema",
+        "version": "1-0-0"
+    },
+    "type": "object",
+    "properties": {
+        "phone_number": {
+            "type": "number"
+        },
+        "email": {
+            "type": "string"
+        }
+    },
+    "additionalProperties": false
+}

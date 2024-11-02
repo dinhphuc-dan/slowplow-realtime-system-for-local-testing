@@ -1,0 +1,15 @@
+prefect*
+.gitignore
+.prefectignore
+.python-version
+docker-compose.yml
+Dockerfile
+.venv
+.dockerignore
+.git 
+.env*
+*env
+*.egg-info/
+*.egg
+test*
+superset_automation

@@ -1,0 +1,15 @@
+version: "3.9"
+services:  
+  prefect-internal-web-app-code-generator:
+    image: snowplow/snowplow-micro:2.1.2
+    container_name: snowplow-micro
+    restart: unless-stopped
+    ports:
+      - 6060:9090
+    volumes:
+      - snowplow-data_1:/config/enrichments
+      - snowplow-data_2:/config/iglu-client-embedded/schemas
+volumes:
+  snowplow-data_1:
+  snowplow-data_2:
+
