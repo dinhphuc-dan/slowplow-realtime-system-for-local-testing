@@ -1,0 +1,11 @@
+services:  
+  snowplow-micro:
+    image: snowplow/snowplow-micro:2.1.2
+    container_name: snowplow-micro
+    restart: unless-stopped
+    ports:
+      - 6060:9090
+    volumes:
+      - ./enrichments:/config/enrichments
+      - ./schemas:/config/iglu-client-embedded/schemas
+

@@ -1,6 +1,4 @@
-# snowplow-tracker
-# requests
-# typing-extensions
+# python 3.10
 
 certifi==2024.8.30
 charset-normalizer==3.3.2
@@ -12,3 +10,5 @@ typing_extensions==4.12.2
 urllib3==2.2.3
 pyspark==3.5.3
 python-dotenv==1.0.1
+SQLAlchemy
+psycopg2

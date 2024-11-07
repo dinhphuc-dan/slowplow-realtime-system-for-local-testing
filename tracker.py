@@ -45,11 +45,14 @@ def main():
 
     emitter = AsyncEmitter(
         # for snowplow micro
-        # endpoint="localhost:6060" ,
+        # endpoint="localhost:6060",
+        # for snowplow local test
         endpoint="localhost:15100",
+        # for snowplow mini
+        # endpoint="104.154.240.235",
         protocol="http",
         port=None,
-        batch_size=1,
+        batch_size=5,
         on_success=None,
         on_failure=None,
         request_timeout=(10, 20),
@@ -81,7 +84,7 @@ def main():
     link_click = SelfDescribing(
         SelfDescribingJson(
             schema="iglu:phucdinhtest01/whatthehell/jsonschema/1-0-0",
-            data={"phone_number": 123456789, "email": "https://www.snowplow.io"},
+            data={"phone_number": 123456789, "email": "phucdinhtestlinkclick0"},
         )
     )
     tracker.track(link_click)
@@ -89,11 +92,12 @@ def main():
     link_click_1 = SelfDescribing(
         SelfDescribingJson(
             schema="iglu:phucdinhtest01/whatthehell_1/jsonschema/1-0-0",
-            data={"phone_number": 123456789, "email": "https://www.snowplow.io"},
+            data={"phone_number": 987654321, "email": "phucdinhtestlinkclick1"},
         )
     )
     tracker.track(link_click_1)
 
+    # manually sent event
     # tracker.flush()
 
 
