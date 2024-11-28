@@ -47,9 +47,11 @@ def main():
         # for snowplow micro
         # endpoint="localhost:6060",
         # for snowplow local test
-        endpoint="localhost:15100",
+        # endpoint="localhost:15100",
         # for snowplow mini
         # endpoint="104.154.240.235",
+        # for snowplow production 1
+        endpoint="34.111.250.149",
         protocol="http",
         port=None,
         batch_size=5,
@@ -102,6 +104,7 @@ def main():
 
 
 if __name__ == "__main__":
-    while True:
+    for i in range(201):
+        print(f"Total event: {i}")
         main()
         time.sleep(5)
